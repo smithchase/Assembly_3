@@ -68,18 +68,18 @@ INCLUDE Irvine32.inc
 	stepc		byte	4,"STEP",null
 	changec		byte	6,"CHANGE",null
 	jqtitle		byte	"STATUS    NAME      PRIORITY  RUNTIME   LOADTIME  ",cr,lf,null
-	jobq		byte	numofjobs*jobsize dup(-1)
+	;jobq		byte	numofjobs*jobsize dup(-1)
 	;status, name, priority, runtime, loadtime
-;	jobq		byte	1,"jimmy   ",7,0,9,0,1	;no crlf neccessary											;1,jimmy,7,09,01;
-;	jobq1		byte	1,"pamela  ",1,5,0,0,2
-;	jobq2		byte	1,"jacob   ",7,2,0,0,2
-;	jobq3		byte	1,"billy   ",7,2,5,0,2	
-;	jobq4		byte	1,"markus  ",7,3,2,0,2
-;	jobq5		byte	1,"phillip ",7,4,4,0,2
-;	jobq6		byte	-1,"margie  ",7,3,3,0,2
-;	jobq7		byte	1,"sam     ",7,2,1,0,3
-;	jobq8		byte	1,"myron   ",6,5,4,0,2
-;	jobq9		byte    1,"        ",0,0,0,0	
+	jobq		byte	1,"jimmy   ",7,0,9,0,1	;no crlf neccessary											;1,jimmy,7,09,01;
+	jobq1		byte	1,"pamela  ",1,5,0,0,2
+	jobq2		byte	1,"jacob   ",7,2,0,0,2
+	jobq3		byte	1,"billy   ",7,2,5,0,2	
+	jobq4		byte	1,"markus  ",7,3,2,0,2
+	jobq5		byte	1,"phillip ",7,4,4,0,2
+	jobq6		byte	-1,"margie  ",7,3,3,0,2
+	jobq7		byte	1,"sam     ",7,2,1,0,3
+	jobq8		byte	1,"myron   ",6,5,4,0,2
+	jobq9		byte    1,"        ",0,0,0,0,0	
 					   ;,null
 	bytecount	dword	0
 	stackindex	sdword	-1;-4
@@ -330,11 +330,13 @@ SHOWQueue PROC					; ebx: index, edi: job number, ecx: 0-10 char count for field
 	mov edx, 0
 sq100:
 	inc edx
-	cmp edx, 10					; compare to 10 jobs written
-	jg endsq100					; after 10, ~move along now~
-	mov al, jobq[ebx]			; write status
-	call WriteChar
-	mov ecx, 9
+	cmp edx, 9					; compare to 10 jobs written
+	jg endsq100					; after 10, loop is done
+	mov al, jobq[ebx]			; status
+	call sq100minus				; handle the negative sign or lack thereof
+	add al, 30h					; convert digit to ascii
+	call WriteChar				; write it
+	mov ecx, 9					; write spaces, 9 even if its negative todo
 	call SPACEwriter
 	
 	inc ebx						; name index
@@ -343,40 +345,49 @@ sq100:
 	mov ecx, 2					; name is always 8, write 2 more spaces
 	call SPACEwriter
 	
-	push edx
-	dec edx						; 0 based numbering
-	imul edx, 14
-	add edx, 9
-	mov ebx, edx				; index of priority
-	pop edx
-	mov al, jobq[ebx]			; write priority
-	call WriteChar
+	;inc ebx
+	mov al, jobq[ebx]
+	add al, 30h
+	Call WriteChar
 	mov ecx, 9
-	call SPACEwriter
-	
-	inc ebx
-	mov al, jobq[ebx]			; write runtime 1st byte
-	call WriteChar
-	inc ebx
-	mov al, jobq[ebx]			; write runtime 2nd byte
-	call WriteChar
+	Call SPACEwriter
+
+	mov ecx, 2					; three loops
+tailTABLEwr:
+	push ecx
+	inc ebx						; digit 1 of PRIORITY  RUNTIME   LOADTIME  
+	mov al, jobq[ebx]
+	add al, 30h
+	Call WriteChar
+	inc ebx						; digit 2
+	mov al, jobq[ebx]
+	add al, 30h
+	Call WriteChar
 	mov ecx, 8
 	call SPACEwriter
-	
-	inc ebx
-	mov al, jobq[ebx]			; write loadtime 1st byte
-	call WriteChar
-	inc ebx
-	mov al, jobq[ebx]			; write loadtime 2nd byte
-	call WriteChar
+	pop ecx
+	dec ecx
+	cmp ecx, 0
+	jg tailTABLEwr
 	call Crlf
-
 	inc ebx
-	;inc edx			;dec edx
 	jmp sq100
 endsq100:
+
 	ret
 SHOWQueue ENDP
+
+sq100minus PROC
+	cmp al, 255					; is it minus?
+	jne sq100pos				; no, leave
+	mov al, 02Dh
+	call WriteChar				; yes, write minus
+	mov al, 1				; load a 1 and let the caller take care of writing it
+	;inc ebx						; get the digit
+;	mov al, jobq[ebx]			; store the digit
+sq100pos:
+	ret
+sq100minus ENDP
 
 SPACEwriter PROC				; use ecx for number of spaces
 beginspwr:
@@ -553,24 +564,39 @@ faEND:
 	ret
 findAVAILA ENDP
 
+; call:	job name in buffer variable, al is what job to check
+; return:	carry flag set if job is found
+haveJOB PROC
+	; calulate offset from jobq[0]
+	mov al, 4						; remove this. this should be set by caller	
+		mov bl, jobsize						; ax = job# * jobsize
+		mul bl							; ax = product
 
-findAVAILAold PROC
-	mov eax, 0
-	mov edi, offset jobq
-	mov stackindex, edi
+	; move address of job table to edi for cmpsb
+		add eax, offset jobq			; jobq index 0 plus job number
+		add eax, 1						; skip over status byte
+	mov edi, eax					; cmpsb destination is each job name
+	; move address of keyboard input parameter to esi for cmpsb
+	mov esi, offset buffer			; cmpsb source is buffer
+	mov ecx, sizename
+	cld 
+	repe cmpsb
 
-	mov ebx, stackindex
-	add ebx, numofjobs*jobsize			; terminate condition
-faLOOP:
-	cmp stackindex, ebx
-	je faEND
-	mov al, byte ptr stackindex[0]
-	cmp stackindex[0],0
-	jl faEND
-	mov eax, jobsize
-	add stackindex, eax
-	jmp faLOOP
-faEND:
+	stc								; haveJOB will return carry high unless it gets cleared from here on out
+	je endHJ						; z flag from cmpsb is set?
+	clc
+endHJ:
 	ret
-findAVAILAold ENDP
+haveJOB ENDP
+
+clearREG PROC
+	mov eax, 0
+	mov ebx, 0
+	mov ecx, 0
+	mov edx, 0
+	mov edi, 0
+	mov esi, 0
+	ret
+clearREG ENDP
+
 end
