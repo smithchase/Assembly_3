@@ -19,6 +19,8 @@ INCLUDE Irvine32.inc
 	;destinationoffset
 	;lastoffset
 	;ttloffset
+	NULL		EQU	0
+	TAB			EQU	9
 
 	AXMTB		label	byte
 	BRCVA		byte	PacketSize dup(0)
@@ -155,9 +157,31 @@ INCLUDE Irvine32.inc
 	QUEUEE		byte	QueueSize dup(0)
 	QUEUEF		byte	QueueSize dup(0)
 
-
-
 				;end of network
+				;packets
+	Packets		label	byte
+	pDest		byte	"D"
+	pSender		byte	"A"
+	pOrig		byte	"A"
+	pTTL		byte	5
+	pHopCounter	byte	0
+
+
+				;io msgs
+	mProcSource	byte	TAB,				"Processing outgoing queue of #.",0
+	mTimeIs		byte						"Time is #.",0
+	mGotMsg		byte	TAB,TAB,			"At time # a message came from #.",0
+	mMsgMade	byte	TAB,TAB,TAB,		"A message is generated for #.",0
+	mMsgSent	byte	TAB,TAB,TAB,TAB,	"The message was sent.",0
+	mMsgSentNot	byte	TAB,TAB,TAB,TAB,	"The message was not sent.",0
+	mNewMsg		byte	TAB,TAB,			"There are # new messages.",0
+	mMsgsAct	byte	TAB,TAB,			"There are # messages active and # messages have been generated.",0
+
+
+
+
+	msgcnt		byte	0
+
 
 .code
 main PROC
@@ -170,15 +194,23 @@ loop1:
 	mov al, NAMEOFFSET[edi]
 	call WriteChar
 	pop eax
-	mov eax, 0
-	mov al, CONNOFFSET[edi]
-	mov bl, SIZEOFVAR									;mul	SIZEOFVAR not work
-	mul	bl												; product in ax....al*bl=ax
-	add edi, eax
-	add edi, SIZEOFFIXED
+	
 	inc ecx
 	jmp loop1
 done:
 	call Crlf
 main ENDP
 end
+
+;in:	edi points to beginning of a node
+;out:	edi points to beginning of next node (alphabetically)
+;todo:	error check
+next_node PROC
+	mov eax, 0
+	mov al, CONNOFFSET[edi]
+	mov bl, SIZEOFVAR									;mul	SIZEOFVAR not work
+	mul	bl												; product in ax....al*bl=ax
+	add edi, eax
+	add edi, SIZEOFFIXED
+	ret
+next_node ENP
