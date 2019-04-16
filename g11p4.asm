@@ -1,27 +1,31 @@
-;
-;
-;
-;
+; Program 4
+; Broadcast Network Topology Simulator
+; Group Number 11
+; Robert Malone, Chase Smith, Luke Habetts
+; mal2994@calu.edu smi8808@calu.edu hab6525@calu.edu
+; CSC323
+; Assembly, April 30, 2019
 title g11p4
 INCLUDE Irvine32.inc
 .data
-	NAME		EQU	0		; offset value
+	; data access offsets for fixed portion of node ;
+	NNAME		EQU	0		; offset value ; "name" is a reserved word so nname it is.
 	CONNECTIONS	EQU	1
 	STARTQUEUE	EQU	2
-	INQUEUE		EQU	6
-	OUTQUEUE	EQU	10
+	INPTR		EQU	6
+	OUTPTR		EQU	10
 	SIZEOFFIXED	EQU	14
-
+	; data access offsets for variable portion of node ;
 	SIZEOFVAR	EQU	12
 	CONNECTION	EQU	0
 	XMTBUFFER	EQU	4
 	RCVBUFFER	EQU	8
 	PACKETSIZE	EQU	6		; how many chars
 	QUEUESIZE	EQU 6
-		;sourceoffset
-		;destinationoffset
-		;lastoffset
-		;ttloffset
+		;sourceoffset			;
+		;destinationoffset		;
+		;lastoffset				;
+		;ttloffset				; to do....
 	NULL		EQU	0
 	TAB			EQU	9
 
@@ -69,9 +73,9 @@ INCLUDE Irvine32.inc
 	NodeA		byte	'A'			; name
 				byte	2			; how many connections
 				dword	QueueA		; startqueue (holds 6 chars)
-				dword	QueueA		; inqueue
-				dword	QueueA		; outqueue
-									; end fixed portion
+				dword	QueueA		; inqueue pointer points to the input data in node's queue
+				dword	QueueA		; outqueue pointer points to the output data in node's queue
+			; end fixed portion, begin variable portion ;
 				dword	NodeB		; connection1
 				dword	AXMTB		; this node's xmtbuff1
 				dword	ARCVB		; this node's rcvbuff1
@@ -200,7 +204,7 @@ eachnode: ; for each node
 	je doneEachNode
 
 	; message mProcSource
-	mov al, NAME[edi]
+	mov al, NNAME[edi]
 	Call pProcSource
 
 	; how many connections for this node?
@@ -209,7 +213,7 @@ eachnode: ; for each node
 
 eachConn: ; for each connection
 		cmp bl, 0
-		je doneEachConn
+;		je doneEachConn
 
 
 
