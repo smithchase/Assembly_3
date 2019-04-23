@@ -1,27 +1,36 @@
-;
-;
-;
-;
+; Program 4
+; Broadcast Network Topology Simulator
+; Group Number 11
+; Robert Malone, Chase Smith, Luke Habetts
+; mal2994@calu.edu smi8808@calu.edu hab6525@calu.edu
+; CSC323
+; Assembly, April 30, 2019
 title g11p4
 INCLUDE Irvine32.inc
 .data
-	NAME		EQU	0		; offset value
+	; data access offsets for fixed portion of node ;
+	NNAME		EQU	0		; offset value ; "name" is a reserved word so nname it is.
 	CONNECTIONS	EQU	1
 	STARTQUEUE	EQU	2
-	INQUEUE		EQU	6
-	OUTQUEUE	EQU	10
+	INPTR		EQU	6		; this is an offset into the node data structure!
+	OUTPTR		EQU	10		; this is an offset into the node data structure!
 	SIZEOFFIXED	EQU	14
-
+	; data access offsets for variable portion of node ;
 	SIZEOFVAR	EQU	12
 	CONNECTION	EQU	0
-	XMTBUFFER	EQU	4
-	RCVBUFFER	EQU	8
-	PACKETSIZE	EQU	6		; how many chars
+	XMTOFFSET	EQU	4
+	RCVOFFSET	EQU	8
+	PacketSize	EQU	6		; how many chars
 	QUEUESIZE	EQU 6
-		;sourceoffset
-		;destinationoffset
-		;lastoffset
-		;ttloffset
+	NUMOMSGS	EQU	6
+	; packet offsets ;
+	Dest		EQU	0		; byte
+	Sender		EQU	1		; byte
+	Orig		EQU	2		; byte
+	TTL			EQU	3		; byte
+	HopCounter	EQU	4		; byte
+	RcvdTime	EQU	5		; word
+
 	NULL		EQU	0
 	TAB			EQU	9
 
@@ -66,24 +75,25 @@ INCLUDE Irvine32.inc
 	FRCVD		byte	PacketSize dup(0)
 
 	Network		label	byte
-	NodeA		byte	'A'			; name
-				byte	2			; how many connections
-				dword	QueueA		; startqueue (holds 6 chars)
-				dword	QueueA		; inqueue
-				dword	QueueA		; outqueue
-									; end fixed portion
-				dword	NodeB		; connection1
-				dword	AXMTB		; this node's xmtbuff1
-				dword	ARCVB		; this node's rcvbuff1
-				dword	NodeE		; connection2
-				dword	AXMTE		; this node's xmtbuff2
-				dword	ARCVE		; this node's rcvbuff2
+	NodeA		byte	'A'			; 0 name
+				byte	2			; 1  how many connections
+				dword	QUEUEA		; 2  startqueue (holds 6 chars)
+				dword	QUEUEA		; 6  inqueue pointer points to the input data in node's queue			; THIS IS THE INPTR HERE!!! IT CHANGES.
+				dword	QUEUEA		; 10 outqueue pointer points to the output data in node's queue		; same but OUTPTR
+			; end fixed portion, begin variable portion ;
+				dword	NodeB		; 14 connection1
+				dword	AXMTB		; 18 this node's xmtbuff1
+				dword	ARCVB		; 22 this node's rcvbuff1
+				dword	NodeE		; 26 connection2
+				dword	AXMTE		; 30 this node's xmtbuff2
+				dword	ARCVE		; 34 this node's rcvbuff2
 
 	NodeB		byte	'B'
 				byte	3
 				dword	QUEUEB
 				dword	QUEUEB
 				dword	QUEUEB
+
 				dword	NodeA
 				dword	BXMTA
 				dword	BRCVA
@@ -99,6 +109,7 @@ INCLUDE Irvine32.inc
 				dword	QUEUEC
 				dword	QUEUEC
 				dword	QUEUEC
+
 				dword	NodeB
 				dword	CXMTB
 				dword	CRCVB
@@ -114,6 +125,7 @@ INCLUDE Irvine32.inc
 				dword	QUEUED
 				dword	QUEUED
 				dword	QUEUED
+
 				dword	NodeC
 				dword	DXMTC
 				dword	DRCVC
@@ -126,6 +138,7 @@ INCLUDE Irvine32.inc
 				dword	QUEUEE
 				dword	QUEUEE
 				dword	QUEUEE
+
 				dword	NodeA
 				dword	EXMTA
 				dword	ERCVA
@@ -141,6 +154,7 @@ INCLUDE Irvine32.inc
 				dword	QUEUEF
 				dword	QUEUEF
 				dword	QUEUEF
+
 				dword	NodeB
 				dword	FXMTB
 				dword	FRCVB
@@ -151,26 +165,15 @@ INCLUDE Irvine32.inc
 				dword	FXMTE
 				dword	FRCVE
 	EndNetwork	byte	0
-				;end of nodes
 
-	QUEUEA		byte	QueueSize dup(0)
-	QUEUEB		byte	QueueSize dup(0)
-	QUEUEC		byte	QueueSize dup(0)
-	QUEUED		byte	QueueSize dup(0)
-	QUEUEE		byte	QueueSize dup(0)
-	QUEUEF		byte	QueueSize dup(0)
+	QUEUEA		byte	51,51,51,51,51,51,(NUMOMSGS-1)*PacketSize dup(0)
+	QUEUEB		byte	NUMOMSGS*PacketSize dup(0)
+	QUEUEC		byte	NUMOMSGS*PacketSize dup(0)
+	QUEUED		byte	NUMOMSGS*PacketSize dup(0)
+	QUEUEE		byte	NUMOMSGS*PacketSize dup(0)
+	QUEUEF		byte	NUMOMSGS*PacketSize dup(0)
 
-				;end of network
-				;packets
-	Packets		label	byte
-	pDest		byte	"D"
-	pSender		byte	"A"
-	pOrig		byte	"A"
-	pTTL		byte	5
-	pHopCounter	byte	0
-
-
-				;io msgs
+				;print msgs
 	mProcSource	byte	TAB,				"Processing outgoing queue of #.",0
 	mTimeIs		byte						"Time is #.",0
 	mGotMsg		byte	TAB,TAB,			"At time # a message came from #.",0
@@ -186,45 +189,47 @@ INCLUDE Irvine32.inc
 
 .code
 main PROC
-	call clearreg
-	mov edi, offset Network
-	mov ecx, 0
+	;debug some addresses
+	mov edi, 0
+	mov edi, offset NodeA
+;	mov edi, outpr[edi]
+	mov edi, offset AXMTB
+	mov edi, 0
 
-	; message time is
-	inc time
-	mov al, time
-	Call pTimeIs
-
-eachnode: ; for each node
-	cmp edi, offset EndNetwork		; number of nodes is 6
-	je doneEachNode
-
-	; message mProcSource
-	mov al, NAME[edi]
-	Call pProcSource
-
-	; how many connections for this node?
-	mov ebx, 0
-	mov bl, CONNECTIONS[edi]
-
-eachConn: ; for each connection
-		cmp bl, 0
-		je doneEachConn
-
-
-
-
-	; update loop
-	call nextNode
-	jmp eachnode
-
-doneEachNode:
+	mov edx, offset QUEUEA
+	mov ecx, PacketSize
+	call WriteString
 	call Crlf
+	
+	call clearreg
+	mov edi, offset NodeA
+	mov eax, 0
+	call PuttIt
+
+	mov edx, offset AXMTB
+	mov ecx, PacketSize
+	call WriteString
+	call Crlf
+
+	mov edi, offset NodeB
+	mov eax, 0
+	call Gettit
+
+	mov edx, offset mTimeIs
+	mov ecx, 8
+	call WriteString
+	call Crlf
+
+	mov edx, offset QueueB
+	mov ecx, PacketSize
+	call WriteString
+	call Crlf
+
+
 main ENDP
 
 ;in:	edi points to beginning of a node
 ;out:	edi points to beginning of next node (alphabetically)
-;todo:	error check
 nextNode PROC
 	mov eax, 0
 	mov al, CONNECTIONS[edi]
@@ -298,5 +303,51 @@ clearreg PROC
 	mov esi, 0
 	ret
 clearreg ENDP
+
+; in:	edi: node# address that will xmt
+;		eax: connection#
+PuttIt PROC	; put data in message
+	push edi
+	; account for variable portion of node data structure
+	;al = connection#
+	mov bl, SIZEOFVAR
+	mul bl
+	; account for fixed porition of node data structure
+	add eax, SIZEOFFIXED
+	mov esi, OUTPTR[edi]
+	add edi, eax ;;;;; you need to make this work for not 0 i think.....i would look at applying sizeofvar to this somehow
+	mov edi, XMTOFFSET[edi]
+	; destination this node's queue
+	
+	mov ecx, PacketSize
+	cld
+	rep movsb
+	pop edi
+	ret
+PuttIt ENDP
+
+; in:	edi: node# address that will rcv
+;		eax: connection#
+GettIt PROC
+	push edi
+	; account for variable portion of node data structure
+	;al = connection#
+	mov bl, SIZEOFVAR
+	mul bl
+	; account for fixed porition of node data structure
+	add eax, SIZEOFFIXED
+	push edi
+	add edi, eax
+	mov esi, RCVOFFSET[edi]
+	pop edi
+	mov edi, INPTR[edi]
+	; destination this node's queue
+	
+	mov ecx, PacketSize
+	cld
+	rep movsb
+	pop edi
+	ret
+GettIt ENDP
 
 end
