@@ -23,6 +23,7 @@ INCLUDE Irvine32.inc
 	PacketSize	EQU	6		; how many chars
 	QUEUESIZE	EQU 6
 	NUMOMSGS	EQU	6
+
 	; packet offsets ;
 	Dest		EQU	0		; byte
 	Sender		EQU	1		; byte
@@ -75,7 +76,7 @@ INCLUDE Irvine32.inc
 	FRCVD		byte	PacketSize dup(0)
 
 	Network		label	byte
-	NodeA		byte	'A'			; 0 name
+	NodeA		byte	'A'			; 0  name
 				byte	2			; 1  how many connections
 				dword	QUEUEA		; 2  startqueue (holds 6 chars)
 				dword	QUEUEA		; 6  inqueue pointer points to the input data in node's queue			; THIS IS THE INPTR HERE!!! IT CHANGES.
@@ -166,7 +167,7 @@ INCLUDE Irvine32.inc
 				dword	FRCVE
 	EndNetwork	byte	0
 
-	QUEUEA		byte	51,51,51,51,51,51,(NUMOMSGS-1)*PacketSize dup(0)
+	QUEUEA		byte	52,52,52,52,52,52,(NUMOMSGS-1)*PacketSize dup(0)
 	QUEUEB		byte	NUMOMSGS*PacketSize dup(0)
 	QUEUEC		byte	NUMOMSGS*PacketSize dup(0)
 	QUEUED		byte	NUMOMSGS*PacketSize dup(0)
@@ -228,6 +229,74 @@ main PROC
 
 main ENDP
 
+; in:	edi: node# address that will xmt
+;		eax: connection#
+PuttIt PROC	; put data in message
+	push edi					; beginning of fixed portion of this node
+	; account for variable portion of node data structure
+;	al = connection#
+	mov bl, SIZEOFVAR
+	mul bl
+	; account for fixed porition of node data structure
+	add eax, SIZEOFFIXED
+	mov esi, OUTPTR[edi]
+
+	add edi, eax																							;;;;;;; IN THE MAIN LOOP STEP BY SIZEOFVAR OR IT WONT WORK
+	
+	mov edi, XMTOFFSET[edi]
+	
+	mov ecx, PacketSize
+	cld
+	rep movsb
+	pop edi
+	ret
+PuttIt ENDP
+
+; in:	edi: node# address that will rcv
+;		eax: connection#
+GettIt PROC
+	push edi					; beginning of fixed portion of this node			;1
+	mov ebx, edi				; beginning of fixed portion of this node
+	; account for variable portion of node data structure for esi
+;	al = connection#
+	mov bl, SIZEOFVAR
+	mul bl
+	; account for fixed porition of node data structure
+	add eax, SIZEOFFIXED
+	add edi, eax				; beginning of variable portion of this node
+	mov esi, RCVOFFSET[edi]		; beginning of source's message
+	mov ecx, esi				; beginning of source's message
+	push edi					; beginning of variable portion of this node		;2
+	mov edi, RCVOFFSET[edi]
+	; modify the message
+	mov edx, TTL[edi]			; TTL for this message
+	sub edx, 1
+	mov edx, TTL[edi]			; TTL for this message decremented
+	mov Sender[edi], ebx		; this node is the sender 
+	pop edi						; beginning of the node variable portion of the node;1		;;possibly loop
+		mov edx, edi ; variable p
+		pop edi		; fixed p
+		push edi	; fixed p
+		mov eax, CONNECTIONS[edi]
+gettitloop1:
+		cmp eax, 0
+		je gettitdone1
+	mov esi, NNAME[edx]			; beginning of destination node
+	mov Dest[edx], edx			; Dest for this message is destination node
+
+
+	pop edi						; beginning of fixed portion of this node
+	push edi					; beginning of fixed portion of this node
+	mov edi, INPTR[edi]
+	
+	mov esi, ecx				; beginning of source's message
+	mov ecx, PacketSize
+	cld
+	rep movsb
+	pop edi						; beginning of fixed portion of this node 
+	ret
+GettIt ENDP
+
 ;in:	edi points to beginning of a node
 ;out:	edi points to beginning of next node (alphabetically)
 nextNode PROC
@@ -239,21 +308,6 @@ nextNode PROC
 	add edi, SIZEOFFIXED
 	ret
 nextNode ENDP
-
-cpQtoXMT PROC
-	push edi											; dont lose node pointer
-;;	mov esi, outqueue[edi]								; xmt
-	; DID NOT FINISH
-cpQtoXMT ENDP
-
-XMTptrEDX PROC
-	mov edx, 0
-	mov al, sizeofvar
-	mul bl
-;;	mov edx, xmtoffsetwithfixed[edi+eax]
-	; did not finish...?
-	ret
-XMTptrEDX ENDP
 
 ; in: AL: node#
 pProcSource PROC
@@ -303,51 +357,5 @@ clearreg PROC
 	mov esi, 0
 	ret
 clearreg ENDP
-
-; in:	edi: node# address that will xmt
-;		eax: connection#
-PuttIt PROC	; put data in message
-	push edi
-	; account for variable portion of node data structure
-	;al = connection#
-	mov bl, SIZEOFVAR
-	mul bl
-	; account for fixed porition of node data structure
-	add eax, SIZEOFFIXED
-	mov esi, OUTPTR[edi]
-	add edi, eax ;;;;; you need to make this work for not 0 i think.....i would look at applying sizeofvar to this somehow
-	mov edi, XMTOFFSET[edi]
-	; destination this node's queue
-	
-	mov ecx, PacketSize
-	cld
-	rep movsb
-	pop edi
-	ret
-PuttIt ENDP
-
-; in:	edi: node# address that will rcv
-;		eax: connection#
-GettIt PROC
-	push edi
-	; account for variable portion of node data structure
-	;al = connection#
-	mov bl, SIZEOFVAR
-	mul bl
-	; account for fixed porition of node data structure
-	add eax, SIZEOFFIXED
-	push edi
-	add edi, eax
-	mov esi, RCVOFFSET[edi]
-	pop edi
-	mov edi, INPTR[edi]
-	; destination this node's queue
-	
-	mov ecx, PacketSize
-	cld
-	rep movsb
-	pop edi
-	ret
-GettIt ENDP
 
 end
