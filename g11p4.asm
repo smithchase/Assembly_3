@@ -23,6 +23,7 @@ INCLUDE Irvine32.inc
 	PacketSize	EQU	6		; how many chars
 	QUEUESIZE	EQU 6
 	NUMOMSGS	EQU	6
+
 	; packet offsets ;
 	Dest		EQU	0		; byte
 	Sender		EQU	1		; byte
@@ -74,8 +75,10 @@ INCLUDE Irvine32.inc
 	DXMTF		label	byte
 	FRCVD		byte	PacketSize dup(0)
 
+	nullPacket	byte	PacketSize dup(0)	; never to be changed
+
 	Network		label	byte
-	NodeA		byte	'A'			; 0 name
+	NodeA		byte	'A'			; 0  name
 				byte	2			; 1  how many connections
 				dword	QUEUEA		; 2  startqueue (holds 6 chars)
 				dword	QUEUEA		; 6  inqueue pointer points to the input data in node's queue			; THIS IS THE INPTR HERE!!! IT CHANGES.
@@ -166,7 +169,7 @@ INCLUDE Irvine32.inc
 				dword	FRCVE
 	EndNetwork	byte	0
 
-	QUEUEA		byte	51,51,51,51,51,51,(NUMOMSGS-1)*PacketSize dup(0)
+	QUEUEA		byte	52,52,52,52,52,52,(NUMOMSGS-1)*PacketSize dup(0)
 	QUEUEB		byte	NUMOMSGS*PacketSize dup(0)
 	QUEUEC		byte	NUMOMSGS*PacketSize dup(0)
 	QUEUED		byte	NUMOMSGS*PacketSize dup(0)
@@ -186,47 +189,108 @@ INCLUDE Irvine32.inc
 	msgcnt		byte	0
 	time		byte	0
 
+	tempname	byte	0	; oof
+	tempcount	byte	0
+
 
 .code
 main PROC
-	;debug some addresses
-	mov edi, 0
-	mov edi, offset NodeA
-;	mov edi, outpr[edi]
-	mov edi, offset AXMTB
-	mov edi, 0
 
-	mov edx, offset QUEUEA
+	mov edx, offset QUEUEA	; is it in queue
 	mov ecx, PacketSize
-	call WriteString
-	call Crlf
+	Call WriteString
+	Call Crlf
+
+	mov edi, offset NodeA	; CALL PUTTIT
+	mov eax, 1
+	Call PuttIt
 	
-	call clearreg
-	mov edi, offset NodeA
-	mov eax, 0
-	call PuttIt
-
-	mov edx, offset AXMTB
+	mov edx, offset QUEUEA ; did it leave queue
 	mov ecx, PacketSize
-	call WriteString
-	call Crlf
+	Call WriteString
+	Call Crlf
 
-	mov edi, offset NodeB
-	mov eax, 0
-	call Gettit
-
-	mov edx, offset mTimeIs
-	mov ecx, 8
-	call WriteString
-	call Crlf
-
-	mov edx, offset QueueB
+	mov edx, offset AXMTB	; did it go to buffer?
 	mov ecx, PacketSize
-	call WriteString
-	call Crlf
+	Call WriteString
+	Call Crlf
+
+	mov esi, offset NodeB	; CALL GETTIT
+	mov eax,1
+	Call GettIt
+
+	mov edx, offset QUEUEB	; did it go to queue
+	mov ecx, PacketSize
+	Call WriteString
+	Call Crlf
+
+	mov edx, offset AXMTB	; did it leave buffer?
+	mov ecx, PacketSize
+	Call WriteString
+	Call Crlf
 
 
 main ENDP
+
+; in:	edi: node# address that will xmt
+;		eax: connection#
+PuttIt PROC	; put data in message
+	push edi					; beginning of fixed portion of this node
+	mov bl, SIZEOFVAR			; account for VARIABLE portion of node data structure
+	mul bl
+	add eax, SIZEOFFIXED		; account for FIXED porition of node data structure
+	mov esi, OUTPTR[edi]		; SOURCE for movsb
+	push esi					; push this for null packet later
+	add edi, eax				;;;;;;; IN THE MAIN LOOP STEP BY SIZEOFVAR OR IT WONT WORK
+	mov edi, XMTOFFSET[edi]
+	mov ecx, PacketSize
+	cld
+	rep movsb					; copy QUEUE at OUTPTR to XMTbuf
+	
+	pop esi						; overwrite QUEUE with Null
+	push esi
+	mov edi, esi
+	mov esi, offset NullPacket
+	mov ecx, PacketSize
+	cld
+	rep movsb
+    
+	pop esi						
+	pop edi
+	mov OUTPTR[edi], esi		; point outptr right before the null packet
+	ret
+PuttIt ENDP
+
+; in:	esi: node# address that will rcv
+;		eax: connection#
+; do one connection of one node (1-based connections)
+GettIt PROC
+	;push esi						; ptr this node
+	mov edi, esi					; ptr this node
+	mov edi, INPTR[edi]				; ptr this node's QUEUE INPTR is DESTINATION
+	add esi, SIZEOFFIXED			; ptr this node's var portion
+gettit1:							; add SIZEOFVAR until you get the eax-specified connection rcvbuf
+	cmp eax, 1				
+	je gettitdone1
+	add esi, SIZEOFVAR
+	dec eax
+	jmp gettit1
+gettitdone1:
+	mov esi, RCVOFFSET[esi]			; ptr to ptr to this node's eax-specified connection's rcvbuf
+	push esi						; for nulling out later
+	mov ecx, PacketSize				; copy the whole packet and no more
+	cld
+	rep movsb						; copy rcvbuf packet to QUEUE at INPTR
+	add byte ptr [edi], PacketSize	; increment INPTR
+	
+	pop esi							; write null packet
+	mov edi, esi
+	mov esi, offset NullPacket
+	mov ecx, PacketSize
+	cld
+	rep movsb
+	ret
+GettIt ENDP
 
 ;in:	edi points to beginning of a node
 ;out:	edi points to beginning of next node (alphabetically)
@@ -239,21 +303,6 @@ nextNode PROC
 	add edi, SIZEOFFIXED
 	ret
 nextNode ENDP
-
-cpQtoXMT PROC
-	push edi											; dont lose node pointer
-;;	mov esi, outqueue[edi]								; xmt
-	; DID NOT FINISH
-cpQtoXMT ENDP
-
-XMTptrEDX PROC
-	mov edx, 0
-	mov al, sizeofvar
-	mul bl
-;;	mov edx, xmtoffsetwithfixed[edi+eax]
-	; did not finish...?
-	ret
-XMTptrEDX ENDP
 
 ; in: AL: node#
 pProcSource PROC
@@ -303,51 +352,5 @@ clearreg PROC
 	mov esi, 0
 	ret
 clearreg ENDP
-
-; in:	edi: node# address that will xmt
-;		eax: connection#
-PuttIt PROC	; put data in message
-	push edi
-	; account for variable portion of node data structure
-	;al = connection#
-	mov bl, SIZEOFVAR
-	mul bl
-	; account for fixed porition of node data structure
-	add eax, SIZEOFFIXED
-	mov esi, OUTPTR[edi]
-	add edi, eax ;;;;; you need to make this work for not 0 i think.....i would look at applying sizeofvar to this somehow
-	mov edi, XMTOFFSET[edi]
-	; destination this node's queue
-	
-	mov ecx, PacketSize
-	cld
-	rep movsb
-	pop edi
-	ret
-PuttIt ENDP
-
-; in:	edi: node# address that will rcv
-;		eax: connection#
-GettIt PROC
-	push edi
-	; account for variable portion of node data structure
-	;al = connection#
-	mov bl, SIZEOFVAR
-	mul bl
-	; account for fixed porition of node data structure
-	add eax, SIZEOFFIXED
-	push edi
-	add edi, eax
-	mov esi, RCVOFFSET[edi]
-	pop edi
-	mov edi, INPTR[edi]
-	; destination this node's queue
-	
-	mov ecx, PacketSize
-	cld
-	rep movsb
-	pop edi
-	ret
-GettIt ENDP
 
 end
